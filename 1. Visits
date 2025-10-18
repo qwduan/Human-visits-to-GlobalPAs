@@ -121,7 +121,7 @@ combined_df <- csv_files %>%
   bind_rows()
 
 combined_df$category <- as.factor(combined_df$category)
-category_levels <- levels(combined_df$category)  # Save the legend
+category_levels <- levels(combined_df$category)
 combined_df$category_code <- as.numeric(combined_df$category)
 #"1"   "2"   "3"   "12"  "13"  "23"  "123"
 write.csv(combined_df, 'xxx/output/visit/V4/df_space.csv')
