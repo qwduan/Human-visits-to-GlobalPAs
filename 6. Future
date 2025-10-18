@@ -522,8 +522,7 @@ global_table <- all_ssp %>%
   ) %>%
   pivot_wider(names_from = scenario, values_from = ratio) %>%
   mutate(region = "Global") %>%
-  select(region, everything())  # Make sure region is first
-
+  select(region, everything()) 
 
 
 final_table <- bind_rows(global_table, all_table)
@@ -586,11 +585,3 @@ ggplot(diff_rank, aes(x = as.factor(IUCN_rank), y = diff, fill = ssp)) +
   labs(x = "SSP", y = "Difference from base", fill = "IUCN_rank") +
   theme_bw()
 
-
-
-all_ssp %>%
-  filter(urban == "all") %>%
-  group_by(scenario) %>%
-  summarise(vi = sum(total_intensity, na.rm=TRUE),
-            total = sum(total_area, na.rm=TRUE),
-            ratio = vi/total)
