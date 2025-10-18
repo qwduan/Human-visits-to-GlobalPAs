@@ -549,7 +549,7 @@ ggplot(diff_region, aes(x = region, y = diff, fill = ssp)) +
   theme_bw()
 
 
-diff_income <- read_csv("C:/Users/qd2n22/OneDrive - University of Southampton/Project_EnvironmentalUrbanisation_V1.2_12.31/output/visit/v4/ssps_income.csv")
+diff_income <- read_csv("xxx/output/visit/v4/ssps_income.csv")
 diff_income$income <- factor(
   diff_income$income,
   levels = c("High income", "Upper middle income", "Lower middle income", "Low income")
@@ -561,7 +561,7 @@ ggplot(diff_income, aes(x = income, y = diff, fill = ssp)) +
   theme_bw()
 
 
-diff_size <- read_csv("C:/Users/qd2n22/OneDrive - University of Southampton/Project_EnvironmentalUrbanisation_V1.2_12.31/output/visit/v4/ssps_size.csv")
+diff_size <- read_csv("xxx/output/visit/v4/ssps_size.csv")
 diff_size$size <- factor(
   diff_size$size,
   levels = c(
@@ -578,7 +578,7 @@ ggplot(diff_size, aes(x = size, y = diff, fill = ssp)) +
 
 
 
-diff_rank <- read_csv("C:/Users/qd2n22/OneDrive - University of Southampton/Project_EnvironmentalUrbanisation_V1.2_12.31/output/visit/v4/ssps_iucn.csv")
+diff_rank <- read_csv("xxx/output/visit/v4/ssps_iucn.csv")
 
 ggplot(diff_rank, aes(x = as.factor(IUCN_rank), y = diff, fill = ssp)) +
   geom_bar(stat = "identity", position = position_dodge(), width = 0.6) +
