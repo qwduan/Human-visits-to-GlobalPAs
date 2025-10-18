@@ -1,0 +1,919 @@
+library(ggplot2); library(FSA); library(purrr)
+
+matched_50 <- read_csv('xxx/output/visit/v4/match_1_50.csv')
+
+
+matched_50 <- matched_50 %>%
+  group_by(subclass) %>%
+  filter(any(treatment == 1) & any(treatment == 0)) %>%
+  ungroup()
+
+treat_df <-  matched_50 %>% filter(treatment == 1)
+
+pa_info_by_subclass <- treat_df %>%
+  select(subclass, pa_id, MIN_IUCN_rank, FIRST_ISO3, pa_area) %>%
+  distinct()
+
+control <- matched_50  %>% filter(treatment == 0) %>%
+  left_join(pa_info_by_subclass, by = 'subclass')%>%
+  rename(pa_id = pa_id.y, MIN_IUCN_rank = MIN_IUCN_rank.y, FIRST_ISO3 = FIRST_ISO3.y, pa_area = pa_area.y)%>%
+  select(!c('pa_id.x','MIN_IUCN_rank.x', 'FIRST_ISO3.x', 'pa_area.x'))
+
+df_match_50 <- bind_rows(treat_df, control)
+
+df_match_50 %>%
+  arrange(distance) %>%
+  mutate(cumulative_count = row_number()) %>%
+  ggplot(aes(x = distance, y = cumulative_count)) +
+  geom_step() +
+  labs(
+    x = "Distance (km)",
+    y = "Cumulative count of matches",
+    title = "Cumulative count by match distance"
+  ) +
+  theme_minimal()
+
+df_match_50 <- df_match_50 %>%
+  filter(distance < 0.5) %>%
+  group_by(subclass) %>%
+  filter(any(treatment == 1) & any(treatment == 0)) %>%
+  ungroup()
+#945394/952996
+
+
+df_match_50  %>%
+  group_by(subclass) %>%
+  summarise(
+    has_treat = any(treatment == 1),
+    has_ctrl  = any(treatment == 0),
+    .groups = "drop"
+  ) %>%
+  filter(!(has_treat & has_ctrl)) %>%
+  nrow()
+
+
+df_match_50  <- df_match_50  %>%
+  mutate(size = cut(
+    pa_area,
+    breaks = c(1, 10, 20, 30, 40, 50, 100, 1000, 100000, Inf),
+    labels = c(
+      "1–10", "10–20", "20–30", "30–40", "40–50",
+      "50–100", "100–1,000", "1,000–100,000", ">100,000"
+    ),
+    right = FALSE
+  ))
+
+df_match_50$continent <- countrycode(df_match_50$FIRST_ISO3, origin = "iso3c", destination = "continent")
+df_match_50$continent[df_match_50$FIRST_ISO3 == 'CCK'] <- "Oceania" 
+
+df_match_50$regions <- countrycode(df_match_50$FIRST_ISO3, origin = "iso3c", destination = "region")
+
+df_match_50$region <- df_match_50$continent
+df_match_50$region[
+  df_match_50$continent == "Americas" & df_match_50$regions == "North America"
+] <- "North America"
+
+df_match_50$region[
+  df_match_50$continent == "Americas" & df_match_50$regions == "Latin America & Caribbean"
+] <- "Latin America & Caribbean"
+
+
+
+library(WDI)
+income<- WDI(indicator = "NY.GDP.PCAP.CD", extra = TRUE)
+
+country_income <- income %>% 
+  filter(year == '2024')%>%
+  dplyr::select(income, iso3c)
+country_income$income[country_income$iso3c == "CZE"] <- "High income"
+country_income$income[country_income$iso3c == "GUF"] <- "High income"
+country_income$income[country_income$iso3c == 'VNM'] <- 'Lower middle income'
+
+df_match_50 <- df_match_50 %>%
+  left_join(country_income, by = c('FIRST_ISO3'='iso3c'))
+df_match_50$income <- factor(df_match_50$income, levels = c("High income", "Upper middle income", 
+                                          "Lower middle income", "Low income"))
+
+
+visit_id <- read_csv("xxx/output/visit/v4/fishnet_humanvisit.csv") %>%
+  dplyr::select(fishnetid, visit_latitude, visit_longitude)
+
+####################################
+
+match_path <- "xxx/output/figures/Paper 3/v5_correspodingvisitv4/3.matching"
+
+
+visit_space <- read_csv('xxx/output/visit/v4/df_space.csv')
+
+visit_index_space <- visit_space %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
+
+space_match <- df_match_50 %>% left_join(visit_index_space, by = c('fishnetid'))
+
+
+space_match <- space_match %>%
+  mutate(
+    has_total = !is.na(category_code),
+    has_rural = category_code %in% c("1", "4", "5", "7"),
+    has_sub   = category_code %in% c("2", "4", "6", "7"),
+    has_urban = category_code %in% c("3", "5", "6", "7")
+  ) 
+
+
+
+df_space_plot <- space_match %>%
+  group_by(MIN_IUCN_rank, treatment) %>%
+  summarise(
+    n_tiles = n(),
+    total = mean(has_total),
+    rural = mean(has_rural),
+    sub = mean(has_sub),
+    urban = mean(has_urban),
+    .groups = "drop"
+  )
+
+df_space_long <- df_space_plot %>%
+  pivot_longer(cols = c(total, rural, sub, urban),
+               names_to = "zone_type", values_to = "prop_tile") %>%
+  mutate(
+    zone_type =  dplyr::recode(as.character(zone_type),
+                               total = "Total", rural = "Rural", sub = "Suburban", urban = "Urban"
+    ),
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    fill_group = paste(zone_type, treatment, sep = "_")
+  )
+fill_levels <- c(
+  "Total_Treat", "Total_Control",
+  "Rural_Treat", "Rural_Control",
+  "Suburban_Treat", "Suburban_Control",
+  "Urban_Treat", "Urban_Control"
+)
+
+df_space_long$fill_group <- factor(df_space_long$fill_group, levels = fill_levels)
+space_colors <- c(
+  "Total_Treat" = '#9400D3',
+  "Total_Control" = scales::alpha('#9400D3', 0.4),
+  "Rural_Treat" = "#31625c",
+  "Rural_Control" = scales::alpha("#31625c", 0.4),
+  "Suburban_Treat" = "#fcd168",
+  "Suburban_Control" = scales::alpha("#fcd168", 0.4),
+  "Urban_Treat" = "#b92336",
+  "Urban_Control" = scales::alpha("#b92336", 0.4)
+)
+ggplot(df_space_long, aes(x = factor(MIN_IUCN_rank), y = prop_tile, fill = fill_group)) +
+  geom_col(position = position_dodge2(width = 0.8, preserve = "single"), width = 0.5) +
+  scale_fill_manual(values = space_colors, name = "Group") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+#ggsave(
+  filename = file.path(match_path, "rankall_space.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 4
+)
+
+
+
+
+
+df_diff_space <- space_match %>%
+  select(subclass, MIN_IUCN_rank, treatment, region, income,
+         total = has_total, rural = has_rural, sub = has_sub, urban = has_urban) %>%
+  pivot_longer(
+    cols = c(total, rural, sub, urban),
+    names_to = "zone_type",
+    values_to = "has_visit"
+  ) %>%
+  pivot_wider(
+    names_from = treatment,
+    values_from = has_visit,
+    names_prefix = "treat_"
+  ) %>%
+  mutate(diff = treat_1 - treat_0) %>%
+  filter(!is.na(diff))
+
+kw_space <- df_diff_space %>%
+  group_by(zone_type) %>%
+  summarise(
+    kw = list(kruskal.test(diff ~ as.factor(MIN_IUCN_rank))),
+    .groups = "drop"
+  ) %>%
+  mutate(p_value = map_dbl(kw, ~ .x$p.value))
+
+
+
+library(rstatix)
+df_filtered <- df_diff_space %>%
+  filter(zone_type %in% c("rural", "sub", "urban"))
+
+kw_zone <- df_filtered %>%
+  group_by(zone_type) %>%
+  kruskal_test(diff ~ MIN_IUCN_rank)
+
+
+
+
+
+
+
+
+
+space_match <- space_match %>%
+  mutate(iucn_group = case_when(
+    MIN_IUCN_rank %in% c(1:3) ~ "AStrict",
+    MIN_IUCN_rank %in% 4:7     ~ "BMultiple",
+    MIN_IUCN_rank == 8     ~ "CNC",
+    TRUE                        ~ NA_character_
+  ))
+
+space_match_three <- space_match %>%
+  group_by(iucn_group, treatment) %>%
+  summarise(
+    space_total = mean(has_total),
+    space_rural = mean(has_rural),
+    space_sub   = mean(has_sub),
+    space_urban = mean(has_urban),
+    .groups = "drop"
+  )
+
+df_space_long_three <- space_match_three  %>%
+  pivot_longer(cols = starts_with("space_"),
+               names_to = "zone_type",
+               values_to = "tile_mean") %>%
+  mutate(
+    zone_type = dplyr::recode(as.character(zone_type),
+                              space_total = "Total",
+                              space_rural = "Rural",
+                              space_sub = "Suburban",
+                              space_urban = "Urban"
+    ),
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    fill_group = interaction(iucn_group, treatment, sep = "_")
+  )
+df_space_long_three$fill_group <- interaction(df_space_long_three$iucn_group, df_space_long_three$treatment, sep = "_")
+
+ggplot(df_space_long_three, aes(x = iucn_group, y = tile_mean, fill = fill_group)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.5) +
+  facet_wrap(~ zone_type, scales = "free_y", nrow = 2) +
+  scale_fill_manual(
+    values = c(
+      "AStrict_Treat" = "#039f9b",
+      "AStrict_Control" = '#94e3e1',
+      "BMultiple_Treat" = "#FF69B4",
+      "BMultiple_Control" = "#FFB6C1",
+      "CNC_Treat" = "#614b49",
+      "CNC_Control" = "#b5b59a"
+    ),
+    name = "Group"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+#ggsave(
+  filename = file.path(match_path, "three_cat_space.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 5
+)
+
+
+
+
+df_diff_space <- df_diff_space%>%
+  mutate(iucn_group = case_when(
+    MIN_IUCN_rank %in% c(1:3) ~ "AStrict",
+    MIN_IUCN_rank %in% 4:7     ~ "BMultiple",
+    MIN_IUCN_rank == 8     ~ "CNC",
+    TRUE                        ~ NA_character_
+  ))
+kw_space_three <- df_diff_space %>%
+  group_by(zone_type) %>%
+  summarise(
+    kw_test = list(kruskal.test(diff ~ as.factor(iucn_group))),
+    .groups = "drop"
+  ) %>%
+  mutate(p_value = map_dbl(kw_test, ~ .x$p.value))
+
+dunn_space3 <- df_diff_space %>%
+  group_by(zone_type) %>%
+  do(
+    dunn = dunnTest(diff ~ iucn_group, data = ., method = "bh")  # Benjamini–Hochberg correction
+  )
+
+
+df_diff_space  %>%
+  group_by(iucn_group) %>%
+  summarise(mean_diff = mean(diff), median_diff = median(diff))
+
+
+
+
+
+tile_loss_contrib <- space_match %>%
+  filter(iucn_group %in% c("AStrict", "BMultiple", "CNC")) %>%
+  mutate(tile_id = paste0(visit_latitude, "_", visit_longitude)) %>%
+  group_by(iucn_group, tile_id) %>%
+  summarise(
+    treat_vis = any(treatment == 1 & has_total),
+    ctrl_vis  = any(treatment == 0 & has_total),
+    rural_ctrl = any(treatment == 0 & has_rural),
+    sub_ctrl   = any(treatment == 0 & has_sub),
+    urban_ctrl = any(treatment == 0 & has_urban),
+    .groups = "drop"
+  ) %>%
+  filter(ctrl_vis & !treat_vis)
+
+df_contrib_clean <- tile_loss_contrib %>%
+  group_by(iucn_group) %>%
+  summarise(
+    total_lost = n(),
+    Rural = sum(rural_ctrl),
+    Suburban = sum(sub_ctrl),
+    Urban = sum(urban_ctrl),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(Rural, Suburban, Urban),
+               names_to = "origin", values_to = "tile_count") %>%
+  mutate(
+    percent = 100 * tile_count / total_lost,
+    iucn_group = factor(iucn_group, levels = rev(unique(iucn_group)))
+  )
+
+ggplot(df_contrib_clean, aes(x = percent, y = iucn_group, fill = origin)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.4) +
+  scale_fill_manual(values = c(
+    Rural = '#8da0cb',
+    Suburban = '#66c2a5',
+    Urban =  '#fc8d62'
+  )) +
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black")
+  )
+ggsave(
+  filename = file.path(match_path, "contri_space.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 4
+)
+
+
+
+#########
+zone_vars_space <- c("has_total", "has_rural", "has_sub", "has_urban")
+
+df_space_long_region <- space_match %>%
+  filter(iucn_group %in% c("AStrict", "BMultiple", "CNC")) %>%
+  pivot_longer(cols = all_of(zone_vars_space),
+               names_to = "zone_type", values_to = "value") %>%
+  mutate(
+    zone_type = recode(zone_type,
+                       has_total = "Total",
+                       has_rural = "Rural",
+                       has_sub   = "Suburban",
+                       has_urban = "Urban"
+    ),
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    group_x = paste(iucn_group, region, sep = "_"),
+    fill_group = interaction(iucn_group, treatment, sep = "_")
+  ) %>%
+  group_by(group_x, iucn_group, region, zone_type, treatment, fill_group) %>%
+  summarise(
+    mean_space = mean(value),
+    .groups = "drop"
+  )
+
+ggplot(df_space_long_region, aes(x = group_x, y = mean_space, fill = fill_group)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "AStrict_Treat" = "#039f9b",
+      "AStrict_Control" = '#94e3e1',
+      "BMultiple_Treat" = "#FF69B4",
+      "BMultiple_Control" = "#FFB6C1",
+      "CNC_Treat" = "#614b49",
+      "CNC_Control" = "#b5b59a"
+    ),
+    name = "Group"
+  ) +
+  facet_wrap(~ zone_type, scales = "free_y", nrow = 2) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+    #axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+ggsave(
+  filename = file.path(match_path, "space_iucn_region.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 5
+)
+
+
+
+kw_space_three_region <- df_diff_space %>%
+  group_by(zone_type, region) %>%
+  summarise(
+    kw_test = list(kruskal.test(diff ~ as.factor(iucn_group))),
+    .groups = "drop"
+  ) %>%
+  mutate(p_value = map_dbl(kw_test, ~ .x$p.value))
+
+dunn_space3_region <- df_diff_space %>%
+  group_by(zone_type, region) %>%
+  do(
+    dunn = dunnTest(diff ~ iucn_group, data = ., method = "bh")  # Benjamini–Hochberg correction
+  )
+space_region_dunn <- dunn_space3_region[[3]][13:18]
+
+
+#Africa; Asia; Europe; Latin America & Caribbean; North America; Oceania; 
+space_region_dunn_df <- map2_dfr(
+  space_region_dunn,
+  13:18,
+  ~ as_tibble(.x$res) %>%
+    mutate(zone = paste0("zone_", .y))
+)
+
+
+df_diff_space %>%
+  group_by(iucn_group, region) %>%
+  summarise(mean_diff = mean(diff), median_diff = median(diff))
+
+
+
+
+
+
+df_space_long_income <- space_match %>%
+  filter(iucn_group %in% c("AStrict", "BMultiple", "CNC")) %>%
+  pivot_longer(cols = all_of(zone_vars_space),
+               names_to = "zone_type", values_to = "value") %>%
+  mutate(
+    zone_type = recode(zone_type,
+                       has_total = "Total",
+                       has_rural = "Rural",
+                       has_sub   = "Suburban",
+                       has_urban = "Urban"
+    ),
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    group_x = paste(iucn_group, income, sep = "_"),
+    fill_group = interaction(iucn_group, treatment, sep = "_")
+  ) %>%
+  group_by(group_x, iucn_group, income, zone_type, treatment, fill_group) %>%
+  summarise(
+    mean_space = mean(value),
+    .groups = "drop"
+  )
+df_space_long_income <- df_space_long_income %>% filter(!is.na(income))
+ggplot(df_space_long_income, aes(x = group_x, y = mean_space, fill = fill_group)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "AStrict_Treat" = "#039f9b",
+      "AStrict_Control" = '#94e3e1',
+      "BMultiple_Treat" = "#FF69B4",
+      "BMultiple_Control" = "#FFB6C1",
+      "CNC_Treat" = "#614b49",
+      "CNC_Control" = "#b5b59a"
+    ),
+    name = "Group"
+  ) +
+  facet_wrap(~ zone_type, scales = "free_y", nrow = 2) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+    #axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+ggsave(
+  filename = file.path(match_path, "space_iucn_income.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 5
+)
+
+
+
+
+
+############################intensity
+
+visit_intensity <- read_csv('xxx/output/visit/v4/df_inten_per.csv')
+visit_index_inten <- visit_intensity %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
+inten_match <- df_match_50 %>% left_join(visit_index_inten, by = c('fishnetid'))
+
+inten_match <- inten_match %>%
+  mutate(
+    sum_visit_time = replace_na(sum_visit_time, 0),
+    rural_visit_time = replace_na(rural_visit_time, 0),
+    sub_visit_time = replace_na(sub_visit_time, 0),
+    urban_visit_time = replace_na(urban_visit_time, 0)
+  )
+inten_match <- inten_match %>%
+  mutate(
+    sum_vt_per = sum_visit_time/fishnet_area,
+    rural_vt_per = rural_visit_time/fishnet_area,
+    sub_vt_per = sub_visit_time/fishnet_area,
+    urban_vt_per = urban_visit_time/fishnet_area
+  )
+
+
+
+inten_match %>% filter(treatment == 1) %>% count(MIN_IUCN_rank)
+
+summary_inten_50 <- inten_match %>%
+  group_by(MIN_IUCN_rank, treatment) %>%
+  summarise(across(c(rural_vt_per, sub_vt_per, urban_vt_per, sum_vt_per),
+                   list(mean = ~mean(.x, na.rm = TRUE),
+                        se = ~sd(.x, na.rm = TRUE) / sqrt(sum(!is.na(.x)))),
+                   .names = "{.col}_{.fn}"),
+            .groups = 'drop')
+
+
+summary_inten_long <- summary_inten_50 %>%
+  pivot_longer(cols = ends_with("_mean"), 
+               names_to = "zone_type", 
+               values_to = "visit_time") %>%
+  mutate(zone_type = gsub("_mean", "", zone_type))
+
+ses_long <- summary_inten_50 %>%
+  pivot_longer(cols = ends_with("_se"), 
+               names_to = "zone_type", 
+               values_to = "se") %>%
+  mutate(zone_type = gsub("_se", "", zone_type))
+
+
+plot_inten <- left_join(summary_inten_long, ses_long, 
+                     by = c("MIN_IUCN_rank", "treatment", "zone_type")) %>%
+  mutate(group = interaction(zone_type, treatment),
+         group = factor(group, levels = c(
+           "sum_vt_per.1", "sum_vt_per.0",
+           "rural_vt_per.1", "rural_vt_per.0",
+           "sub_vt_per.1",   "sub_vt_per.0",
+           "urban_vt_per.1", "urban_vt_per.0"
+         )))
+
+zone_colors <- c(
+  "sum_vt_per.1" = '#9400D3',
+  "sum_vt_per.0" = scales::alpha('#9400D3', 0.4),
+  "rural_vt_per.1" = "#31625c",
+  "rural_vt_per.0" = scales::alpha("#31625c", 0.4),
+  "sub_vt_per.1" = "#fcd168",
+  "sub_vt_per.0" = scales::alpha("#fcd168", 0.4),
+  "urban_vt_per.1" = "#b92336",
+  "urban_vt_per.0" = scales::alpha("#b92336", 0.4)
+)
+
+ggplot(plot_inten, aes(x = factor(MIN_IUCN_rank), y = visit_time, fill = group)) +
+  geom_col(position = position_dodge(width = 0.5), width = 0.5) +
+  geom_errorbar(aes(ymin = visit_time - se, ymax = visit_time + se),
+                width = 0.3, size = 0.3, position = position_dodge(width = 0.5)) +
+  scale_fill_manual(values = zone_colors) +
+  labs(x = "IUCN Rank", y = "Mean Visit Time with SE") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+#ggsave(
+  filename = file.path(match_path, "rankall_inten.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 4
+)
+
+
+
+
+
+
+
+inten_long <- inten_match %>%
+  select( subclass, MIN_IUCN_rank, treatment, region, income,
+          rural = rural_vt_per,
+          sub = sub_vt_per,
+          urban = urban_vt_per,
+          total = sum_vt_per) %>%
+  pivot_longer(cols = c(rural, sub, urban, total),
+               names_to = "zone_type",
+               values_to = "value")
+
+df_diff_inten <- inten_long  %>%
+  pivot_wider(names_from = treatment, values_from = value, names_prefix = "treat_") %>%
+  filter(!is.na(treat_1) & !is.na(treat_0)) %>%  # ensure both sides present
+  mutate(diff = treat_1 - treat_0)
+
+
+kw_inten <- df_diff_inten %>%
+  group_by(zone_type) %>%
+  summarise(
+    kw_test = list(kruskal.test(diff ~ as.factor(MIN_IUCN_rank))),
+    .groups = "drop"
+  ) %>%
+  mutate(p_value = map_dbl(kw_test, ~ .x$p.value))
+
+
+
+df_filtered_inten <- df_diff_inten %>%
+  filter(zone_type %in% c("rural", "sub", "urban"))
+
+kw_zone_inten <- df_filtered_inten %>%
+  group_by(zone_type) %>%
+  kruskal_test(diff ~ MIN_IUCN_rank)
+
+
+
+
+
+
+inten_match <- inten_match %>%
+  mutate(iucn_group = case_when(
+    MIN_IUCN_rank %in% c(1:3) ~ "AStrict",
+    MIN_IUCN_rank %in% 4:7     ~ "BMultiple",
+    MIN_IUCN_rank == 8     ~ "CNC",
+    TRUE                        ~ NA_character_
+  ))
+
+
+zone_vars <- c("sum_vt_per", "rural_vt_per", "sub_vt_per", "urban_vt_per")
+
+inten_match %>% filter(treatment == 1) %>% count(iucn_group)
+
+df_inten_long_three <- inten_match %>%
+  filter(iucn_group %in% c("AStrict", "BMultiple", "CNC")) %>%
+  pivot_longer(cols = all_of(zone_vars), names_to = "zone_type", values_to = "value") %>%
+  mutate(
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    zone_type = factor(zone_type, levels = zone_vars)
+  ) %>%
+  group_by(iucn_group, treatment, zone_type) %>%
+  summarise(mean_visit = mean(value, na.rm = TRUE),
+            count = n(),
+            se = sd(value, na.rm = TRUE) / sqrt(n()),.groups = "drop")
+
+df_inten_long_three$fill_group <- interaction(df_inten_long_three$iucn_group, df_inten_long_three$treatment, sep = "_")
+
+
+ggplot(df_inten_long_three, aes(x = iucn_group, y = mean_visit, fill = fill_group)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.5) +
+  geom_errorbar(
+    aes(ymin = mean_visit - se, ymax = mean_visit + se, group = fill_group),
+    position = position_dodge(width = 0.6),
+    width = 0.2, size = 0.3
+  ) +
+  scale_fill_manual(
+    values = c(
+      "AStrict_Treat" = "#039f9b",
+      "AStrict_Control" = '#94e3e1',
+      "BMultiple_Treat" = "#FF69B4",
+      "BMultiple_Control" = "#FFB6C1",
+      "CNC_Treat" = "#614b49",
+      "CNC_Control" = "#b5b59a"
+    ),
+    name = "Group"
+  ) +
+  facet_wrap(~ zone_type, scales = "free_y", nrow = 2) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+#ggsave(
+  filename = file.path(match_path, "three_cat_inten.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 5
+)
+
+
+
+
+df_diff_inten <- df_diff_inten %>%
+  mutate(iucn_group = case_when(
+    MIN_IUCN_rank %in% c(1:3) ~ "AStrict",
+    MIN_IUCN_rank %in% 4:7     ~ "BMultiple",
+    MIN_IUCN_rank == 8     ~ "CNC",
+    TRUE                        ~ NA_character_
+  ))
+
+
+kw_inten_three <- df_diff_inten %>%
+  group_by(zone_type) %>%
+  summarise(
+    kw_test = list(kruskal.test(diff ~ as.factor(iucn_group))),
+    .groups = "drop"
+  ) %>%
+  mutate(p_value = map_dbl(kw_test, ~ .x$p.value))
+
+dunn_inten <- df_diff_inten %>%
+  group_by(zone_type) %>%
+  do(
+    dunn = dunnTest(diff ~ iucn_group, data = ., method = "bh")  # Benjamini–Hochberg correction
+  )
+
+dunn_inten$dunn[[3]] 
+
+
+df_diff_inten %>%
+  group_by(iucn_group) %>%
+  summarise(mean_diff = mean(diff), median_diff = median(diff))
+
+
+
+df_intensity_contrib <- df_diff_inten %>%
+  filter(zone_type %in% c("rural", "sub", "urban")) %>%
+  group_by(iucn_group, zone_type) %>%
+  summarise(
+    net_change = sum(diff, na.rm = TRUE),
+    .groups = "drop"
+  )
+df_intensity_contrib <- df_intensity_contrib %>%
+  group_by(iucn_group) %>%
+  mutate(
+    total_change = sum(net_change, na.rm = TRUE),
+    percent = 100 * net_change / total_change
+  ) %>%
+  ungroup()
+
+df_intensity_contrib<- df_intensity_contrib%>%
+  mutate(iucn_group = factor(iucn_group, levels = rev(unique(iucn_group))))
+
+ggplot(df_intensity_contrib, aes(x = percent, y = iucn_group, fill = zone_type)) +
+  geom_col(width = 0.4) +
+  scale_fill_manual(
+    values = c(
+      rural = '#8da0cb',     # soft teal
+      sub = '#66c2a5',  # coral orange
+      urban =  '#fc8d62'     # cool blue
+    )
+  ) +
+  scale_x_continuous(breaks = c(25, 50,75,100)) +
+  labs(
+    y = "IUCN Group",
+    x = "Contribution (%)",
+    fill = "Visitor Origin"
+  ) +
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    axis.line.x = element_line(color = "black"),
+    axis.line.y = element_line(color = "black")
+  )
+
+ggsave(
+  filename = file.path(match_path, "contri_inten.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 4
+)
+
+
+
+
+
+######################
+inten_match  %>% filter(treatment == 1) %>% count(iucn_group, region)
+df_inten_long_region <- inten_match  %>% 
+  filter(iucn_group %in% c("AStrict", "BMultiple", "CNC")) %>%
+  pivot_longer(cols = all_of(zone_vars), names_to = "zone_type", values_to = "value") %>%
+  mutate(
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    zone_type = factor(zone_type, levels = zone_vars),
+    group_x = paste(iucn_group, region, sep = "_")  # Combine for x-axis
+  ) %>%
+  group_by(group_x, iucn_group, region, zone_type, treatment) %>%
+  summarise(mean_visit = mean(value, na.rm = TRUE) ,
+            count = n(),
+            se = sd(value, na.rm = TRUE) / sqrt(n()),.groups = "drop")
+
+df_inten_long_region$fill_group <- interaction(df_inten_long_region$iucn_group, df_inten_long_region$treatment, sep = "_")
+
+ggplot(df_inten_long_region, aes(x = group_x, y = mean_visit, fill = fill_group)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.5) +
+  geom_errorbar(
+    aes(ymin = mean_visit - se, ymax = mean_visit + se, group = fill_group),
+    position = position_dodge(width = 0.6),
+    width = 0.2, size = 0.3
+  ) +
+  scale_fill_manual(
+    values = c(
+      "AStrict_Treat" = "#039f9b",
+      "AStrict_Control" = '#94e3e1',
+      "BMultiple_Treat" = "#FF69B4",
+      "BMultiple_Control" = "#FFB6C1",
+      "CNC_Treat" = "#614b49",
+      "CNC_Control" = "#b5b59a"
+    ),
+    name = "Group"
+  ) +
+  facet_wrap(~ zone_type, scales = "free_y", nrow = 2) +
+  labs(x = "IUCN Group + Region", y = "Mean Visit Time") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+#theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+ggsave(
+  filename = file.path(match_path, "inten_icun_region.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 5
+)
+
+
+kw_inten_three_region <- df_diff_inten %>%
+  group_by(zone_type, region) %>%
+  summarise(
+    kw_test = list(kruskal.test(diff ~ as.factor(iucn_group))),
+    .groups = "drop"
+  ) %>%
+  mutate(p_value = map_dbl(kw_test, ~ .x$p.value))
+
+dunn_inten_region <- df_diff_inten %>%
+  group_by(zone_type, region) %>%
+  do(
+    dunn = dunnTest(diff ~ iucn_group, data = ., method = "bh")  # Benjamini–Hochberg correction
+  )
+inten_region_dunn <- dunn_inten_region[[3]][13:18]
+
+
+#Africa; Asia; Europe; Latin America & Caribbean; North America; Oceania; 
+inten_region_dunn_df <- map2_dfr(
+  inten_region_dunn,
+  13:18,
+  ~ as_tibble(.x$res) %>%
+    mutate(zone = paste0("zone_", .y))
+)
+
+
+df_diff_inten %>%
+  group_by(iucn_group, region) %>%
+  summarise(mean_diff = mean(diff), median_diff = median(diff))
+
+
+
+
+
+
+
+
+inten_match  %>% filter(treatment == 1) %>% count(iucn_group, income)
+df_inten_long_income <- inten_match  %>% 
+  filter(iucn_group %in% c("AStrict", "BMultiple", "CNC")) %>%
+  pivot_longer(cols = all_of(zone_vars), names_to = "zone_type", values_to = "value") %>%
+  mutate(
+    treatment = factor(treatment, levels = c(1, 0), labels = c("Treat", "Control")),
+    zone_type = factor(zone_type, levels = zone_vars),
+    group_x = paste(iucn_group, income, sep = "_")  # Combine for x-axis
+  ) %>%
+  group_by(group_x, iucn_group, income, zone_type, treatment) %>%
+  summarise(mean_visit = mean(value, na.rm = TRUE) ,
+            count = n(),
+            se = sd(value, na.rm = TRUE) / sqrt(n()),.groups = "drop")
+
+df_inten_long_income$fill_group <- interaction(df_inten_long_income$iucn_group, df_inten_long_income$treatment, sep = "_")
+
+df_inten_long_income <- df_inten_long_income %>% filter(!is.na(income))
+ggplot(df_inten_long_income, aes(x = group_x, y = mean_visit, fill = fill_group)) +
+  geom_col(position = position_dodge(width = 0.6), width = 0.5) +
+  geom_errorbar(
+    aes(ymin = mean_visit - se, ymax = mean_visit + se, group = fill_group),
+    position = position_dodge(width = 0.6),
+    width = 0.2, size = 0.3
+  ) +
+  scale_fill_manual(
+    values = c(
+      "AStrict_Treat" = "#039f9b",
+      "AStrict_Control" = '#94e3e1',
+      "BMultiple_Treat" = "#FF69B4",
+      "BMultiple_Control" = "#FFB6C1",
+      "CNC_Treat" = "#614b49",
+      "CNC_Control" = "#b5b59a"
+    ),
+    name = "Group"
+  ) +
+  facet_wrap(~ zone_type, scales = "free_y", nrow = 2) +
+  labs(x = "IUCN Group + Region", y = "Mean Visit Time") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+#theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+ggsave(
+  filename = file.path(match_path, "inten_icun_income.pdf"),
+  plot = last_plot(), 
+  width = 8,
+  height = 5
+)
+
