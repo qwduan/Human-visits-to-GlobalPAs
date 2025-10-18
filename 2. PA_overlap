@@ -25,22 +25,6 @@ df <- df %>%
 
 
 
-df$continent <- countrycode(df$FIRST_ISO3, origin = "iso3c", destination = "continent")
-table(df$continent)
-df$continent[df$FIRST_ISO3 == 'CCK'] <- "Oceania" 
-
-df$regions <- countrycode(df$FIRST_ISO3, origin = "iso3c", destination = "region")
-
-df$region <- df$continent
-df$region[
-  df$continent == "Americas" & df$regions == "North America"
-] <- "North America"
-
-df$region[
-  df$continent == "Americas" & df$regions == "Latin America & Caribbean"
-] <- "Latin America & Caribbean"
-table(df$region)
-
 #install.packages("WDI")
 library(WDI)
 # Get country income levels from the World Bank
