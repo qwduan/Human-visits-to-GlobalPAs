@@ -4,7 +4,7 @@ This is the code supporting the results from Duan et al., along with two global 
 
 Details can be found in the manuscript: 
 
-The maps are stored as.tiff files: **Visit space map.tiff**, **Visit intensity map.tiff**
+The maps are stored as.tiff files: **space.tif**, **intensity.tif**
 
 
 
