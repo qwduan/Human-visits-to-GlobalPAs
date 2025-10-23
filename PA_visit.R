@@ -1,3 +1,165 @@
+library(readr); library(stringr); library(dplyr); library(countrycode); library(sf); library(terra)
+library(tidyr); library(exactextractr); library(ggplot2); library(tidyverse)
+########original data (mean of fraction of July 2024–June 2025), get visit space and visit intensity
+
+base_path <- "xxx (Activity space map)"
+output_path <-'xxx/output/visit/mean_update'
+file2_path <- 'xxx/output/visit/home_fra_update'
+
+output_path1 <- "xxx/output/visit/space_update"
+output_path2 <- "xxx/output/visit/inten_update"
+output_path3 <- "xxx/output/visit/inten_prop_update"
+pop <-  read_csv('xxx/output/visit/v4/home_fra_update.csv')
+
+
+process_country <- function(country) {
+  print(paste("Processing:", country))  
+  countrycode <- tolower(countrycode(country, "country.name", "iso3c"))
+  
+  df <-  read_csv(file.path(output_path, paste0("activity_", country, ".csv")))
+  
+  if (is.null(df)) {
+    print(paste("No valid files for:", country))
+    return(NULL)
+  }
+  
+  
+  df <- df %>% left_join(pop, by = c('home_longitude' ='lon', 'home_latitude' = 'lat'))
+  
+  df <- df %>% filter(visit_fraction > 0)
+  visit_ext <- bind_rows(
+    df %>% filter(urban == 3) %>% distinct(visit_latitude, visit_longitude) %>% mutate(urban = "urban"),
+    df %>% filter(urban == 2) %>% distinct(visit_latitude, visit_longitude) %>% mutate(urban = "sub"),
+    df %>% filter(urban == 1) %>% distinct(visit_latitude, visit_longitude) %>% mutate(urban = "rural")
+  )
+  
+  total_distinct <- visit_ext %>%
+    distinct(visit_latitude, visit_longitude) %>%
+    nrow()
+  
+  ext_stat <- visit_ext %>%
+    group_by(urban) %>%
+    summarise(rows = n(), .groups = "drop") %>%
+    mutate(proportion = rows / total_distinct, total_distinct = total_distinct)
+  
+  
+  df$act_time <- df$visit_fraction * df$pop
+  visit_proportion <- df %>%
+    group_by(visit_latitude, visit_longitude, urban) %>%
+    summarise(visit_time = sum(act_time, na.rm = TRUE), .groups = "drop") %>%
+    group_by(visit_latitude, visit_longitude) %>%        
+    mutate(
+      sum_visit_time = sum(visit_time, na.rm = TRUE), 
+      fraction_visit_time = visit_time / sum_visit_time  
+    ) %>%
+    ungroup()
+  
+  
+  visit_intensity <- df %>%
+    group_by(visit_latitude, visit_longitude) %>% 
+    summarise(
+      sum_visit_time = sum(act_time, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  write_csv(visit_ext, file.path(output_path1, paste0("ext_", country, ".csv")))
+  write_csv(visit_proportion, file.path(output_path3, paste0("proportion_", country, ".csv")))
+  write_csv(visit_intensity, file.path(output_path2, paste0("intensity_", country, ".csv")))
+  
+  print(paste("Finished processing:", country))
+}
+
+lapply(countries, process_country)
+
+
+
+
+###################################get space
+
+ext_directory <- "xxx/output/visit/space_update"
+space_directory <-"xxx/output/visit/space_sum_update"
+
+ext_files <- list.files(path = ext_directory, pattern = "*\\.csv$", full.names = TRUE)
+
+process_ext_sum <- function(file_path) {
+  country_name <- gsub("ext_|\\.csv", "", basename(file_path))
+  
+  visit_ext <- read_csv(file_path)
+  
+  df_unique <- visit_ext %>%
+    group_by(visit_latitude, visit_longitude) %>%
+    summarize(urban_types = paste(unique(urban), collapse = ","), .groups = "drop") %>%
+    mutate(
+      category = case_when(
+        urban_types == "rural" ~ 1,
+        urban_types == "sub" ~ 2,
+        urban_types == "urban" ~ 3,
+        urban_types %in% c("rural,urban", "urban,rural") ~ 13,
+        urban_types %in% c("rural,sub", "sub,rural") ~ 12,
+        urban_types %in% c("urban,sub", "sub,urban") ~ 23,
+        urban_types %in% c("rural,urban,sub", "urban,rural,sub", "urban,sub,rural") ~ 123,
+        TRUE ~ NA_real_
+      )
+    )
+  
+  save_path <- file.path(space_directory, paste0("space_", country_name, ".csv"))
+  write_csv(df_unique, save_path)
+  
+  print(paste("Finished processing:", country_name)) 
+  return(df_unique)
+}
+
+lapply(ext_files, process_ext_sum)
+
+
+
+space_directory <- "xxx/output/visit/space_sum_update"
+csv_files <- list.files(space_directory, pattern = "\\.csv$", full.names = TRUE)
+
+combined_df <- csv_files %>%
+  lapply(read_csv) %>%
+  bind_rows()
+
+combined_df$category <- as.factor(combined_df$category)
+category_levels <- levels(combined_df$category)
+combined_df$category_code <- as.numeric(combined_df$category)
+#"1"   "2"   "3"   "12"  "13"  "23"  "123"
+write.csv(combined_df, 'xxx/output/visit/V4/df_space.csv')
+
+#############################################get intensity
+
+output_path3 <- "xxx/output/visit/inten_prop_update"
+prop_files <- list.files(output_path3, pattern = "\\.csv$", full.names = TRUE)
+prop_df <- prop_files %>%
+  lapply(read_csv) %>%
+  bind_rows()
+
+prop_df$logtime = log(prop_df$sum_visit_time)
+
+
+summary_table <- prop_df %>%
+  mutate(
+    urban_category = case_when(
+      urban == 3 ~ "urban_visit_time",
+      urban == 2 ~ "sub_visit_time",
+      urban == 1 ~ "rural_visit_time"
+    )
+  ) %>%
+  select(visit_latitude, visit_longitude, urban_category, visit_time, sum_visit_time, logtime) %>%
+  pivot_wider(
+    names_from = urban_category,
+    values_from = visit_time,
+    values_fill = 0
+  ) %>%
+  distinct()
+
+summary_table <- summary_table %>% filter(sum_visit_time >0)
+write.csv(summary_table, 'xxx/output/visit/V4/df_inten_per.csv')
+
+
+
+#####################################################
+
 library(dplyr); library(readr); library(ggplot2); library(tidyr); library(countrycode)
 
 folder <- "xxx/output/visit/covar_resample"
