@@ -4,7 +4,7 @@ This is the code supporting the results from Duan et al., along with two global 
 
 Details can be found in the manuscript: 
 
-The maps are stored as.tiff files: **space.tif**, **intensity.tif**
+The maps are stored as.tiff files: **space.tif**, **intensity.tif** (will be publicly accessible upon publication)
 
 **space.tif**:   
 #1 Only from rural residents  
