@@ -782,9 +782,9 @@ ggplot(df_intensity_contrib, aes(x = percent, y = iucn_group, fill = zone_type))
   geom_col(width = 0.4) +
   scale_fill_manual(
     values = c(
-      rural = '#31625c',     # soft teal
-      sub = '#fcd168',  # coral orange
-      urban =  '#b92336'     # cool blue
+      rural = '#31625c',   
+      sub = '#fcd168', 
+      urban =  '#b92336' 
     )
   ) +
   scale_x_continuous(breaks = c(25, 50,75,100)) +
