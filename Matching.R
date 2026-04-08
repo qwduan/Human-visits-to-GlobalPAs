@@ -304,8 +304,7 @@ visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
 
 match_path <- "xxx/output/figures/3.matching_95"
 
-
-visit_space <- read_csv('xxx/df_space.csv')
+visit_space <- read_csv('xxx/output/visit/df_space.csv')
 
 visit_index_space <- visit_space %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
@@ -553,7 +552,7 @@ ggsave(
 
 ############################intensity
 
-visit_intensity <- read_csv('xxx/df_inten_per_adj.csv')
+visit_intensity <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
 visit_index_inten <- visit_intensity %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 inten_match <- df_match_50 %>% left_join(visit_index_inten, by = c('fishnetid'))
 
