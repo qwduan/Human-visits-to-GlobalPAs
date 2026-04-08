@@ -86,7 +86,7 @@ df$income <- factor(df$income, levels = c("High income", "Upper middle income",
                                                 "Lower middle income", "Low income"))
 
 
-visit_inten <- read_csv('xxx/output/visit/df_inten_per.csv')
+visit_inten <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
 visit_space <- read_csv('xxx1/output/visit/df_space.csv')
 
 visit_index_inten <- df %>% left_join(visit_inten, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
