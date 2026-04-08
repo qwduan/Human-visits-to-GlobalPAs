@@ -1,177 +1,44 @@
-library(readr); library(stringr); library(dplyr); library(countrycode); library(sf); library(terra)
-library(tidyr); library(exactextractr); library(ggplot2); library(tidyverse)
-########original data (mean of fraction of July 2024–June 2025), get visit space and visit intensity
-
-base_path <- "xxx (Activity space map)"
-output_path <-'xxx/output/visit/mean_update'
-file2_path <- 'xxx/output/visit/home_fra_update'
-
-output_path1 <- "xxx/output/visit/space_update"
-output_path2 <- "xxx/output/visit/inten_update"
-output_path3 <- "xxx/output/visit/inten_prop_update"
-pop <-  read_csv('xxx/output/visit/v4/home_fra_update.csv')
-
-
-process_country <- function(country) {
-  print(paste("Processing:", country))  
-  countrycode <- tolower(countrycode(country, "country.name", "iso3c"))
-  
-  df <-  read_csv(file.path(output_path, paste0("activity_", country, ".csv")))
-  
-  if (is.null(df)) {
-    print(paste("No valid files for:", country))
-    return(NULL)
-  }
-  
-  
-  df <- df %>% left_join(pop, by = c('home_longitude' ='lon', 'home_latitude' = 'lat'))
-  
-  df <- df %>% filter(visit_fraction > 0)
-  visit_ext <- bind_rows(
-    df %>% filter(urban == 3) %>% distinct(visit_latitude, visit_longitude) %>% mutate(urban = "urban"),
-    df %>% filter(urban == 2) %>% distinct(visit_latitude, visit_longitude) %>% mutate(urban = "sub"),
-    df %>% filter(urban == 1) %>% distinct(visit_latitude, visit_longitude) %>% mutate(urban = "rural")
-  )
-  
-  total_distinct <- visit_ext %>%
-    distinct(visit_latitude, visit_longitude) %>%
-    nrow()
-  
-  ext_stat <- visit_ext %>%
-    group_by(urban) %>%
-    summarise(rows = n(), .groups = "drop") %>%
-    mutate(proportion = rows / total_distinct, total_distinct = total_distinct)
-  
-  
-  df$act_time <- df$visit_fraction * df$pop
-  visit_proportion <- df %>%
-    group_by(visit_latitude, visit_longitude, urban) %>%
-    summarise(visit_time = sum(act_time, na.rm = TRUE), .groups = "drop") %>%
-    group_by(visit_latitude, visit_longitude) %>%        
-    mutate(
-      sum_visit_time = sum(visit_time, na.rm = TRUE), 
-      fraction_visit_time = visit_time / sum_visit_time  
-    ) %>%
-    ungroup()
-  
-  
-  visit_intensity <- df %>%
-    group_by(visit_latitude, visit_longitude) %>% 
-    summarise(
-      sum_visit_time = sum(act_time, na.rm = TRUE),
-      .groups = "drop"
-    )
-
-  write_csv(visit_ext, file.path(output_path1, paste0("ext_", country, ".csv")))
-  write_csv(visit_proportion, file.path(output_path3, paste0("proportion_", country, ".csv")))
-  write_csv(visit_intensity, file.path(output_path2, paste0("intensity_", country, ".csv")))
-  
-  print(paste("Finished processing:", country))
-}
-
-lapply(countries, process_country)
-
-
-
-
-###################################get space
-
-ext_directory <- "xxx/output/visit/space_update"
-space_directory <-"xxx/output/visit/space_sum_update"
-
-ext_files <- list.files(path = ext_directory, pattern = "*\\.csv$", full.names = TRUE)
-
-process_ext_sum <- function(file_path) {
-  country_name <- gsub("ext_|\\.csv", "", basename(file_path))
-  
-  visit_ext <- read_csv(file_path)
-  
-  df_unique <- visit_ext %>%
-    group_by(visit_latitude, visit_longitude) %>%
-    summarize(urban_types = paste(unique(urban), collapse = ","), .groups = "drop") %>%
-    mutate(
-      category = case_when(
-        urban_types == "rural" ~ 1,
-        urban_types == "sub" ~ 2,
-        urban_types == "urban" ~ 3,
-        urban_types %in% c("rural,urban", "urban,rural") ~ 13,
-        urban_types %in% c("rural,sub", "sub,rural") ~ 12,
-        urban_types %in% c("urban,sub", "sub,urban") ~ 23,
-        urban_types %in% c("rural,urban,sub", "urban,rural,sub", "urban,sub,rural") ~ 123,
-        TRUE ~ NA_real_
-      )
-    )
-  
-  save_path <- file.path(space_directory, paste0("space_", country_name, ".csv"))
-  write_csv(df_unique, save_path)
-  
-  print(paste("Finished processing:", country_name)) 
-  return(df_unique)
-}
-
-lapply(ext_files, process_ext_sum)
-
-
-
-space_directory <- "xxx/output/visit/space_sum_update"
-csv_files <- list.files(space_directory, pattern = "\\.csv$", full.names = TRUE)
-
-combined_df <- csv_files %>%
-  lapply(read_csv) %>%
-  bind_rows()
-
-combined_df$category <- as.factor(combined_df$category)
-category_levels <- levels(combined_df$category)
-combined_df$category_code <- as.numeric(combined_df$category)
-#"1"   "2"   "3"   "12"  "13"  "23"  "123"
-write.csv(combined_df, 'xxx/output/visit/V4/df_space.csv')
-
-#############################################get intensity
-
-output_path3 <- "xxx/output/visit/inten_prop_update"
-prop_files <- list.files(output_path3, pattern = "\\.csv$", full.names = TRUE)
-prop_df <- prop_files %>%
-  lapply(read_csv) %>%
-  bind_rows()
-
-prop_df$logtime = log(prop_df$sum_visit_time)
-
-
-summary_table <- prop_df %>%
-  mutate(
-    urban_category = case_when(
-      urban == 3 ~ "urban_visit_time",
-      urban == 2 ~ "sub_visit_time",
-      urban == 1 ~ "rural_visit_time"
-    )
-  ) %>%
-  select(visit_latitude, visit_longitude, urban_category, visit_time, sum_visit_time, logtime) %>%
-  pivot_wider(
-    names_from = urban_category,
-    values_from = visit_time,
-    values_fill = 0
-  ) %>%
-  distinct()
-
-summary_table <- summary_table %>% filter(sum_visit_time >0)
-write.csv(summary_table, 'xxx/output/visit/V4/df_inten_per.csv')
-
-
-
-#####################################################
+#####################################################estimate visit space and visit intensity within PAs
+#fishnet_pa: overlap between pixels and PAs
 
 library(dplyr); library(readr); library(ggplot2); library(tidyr); library(countrycode)
 
 folder <- "xxx/output/visit/covar_resample"
-pa <- read_csv(file.path(folder, "pa_greater1_nofbcountry.csv"))
+pa <- read_csv(file.path(folder, "pa_greater1.csv"))
 
+#filter urban pixels
+fishnet_pa <- read_csv(file.path(folder, "fishnet_pa_up.csv")) %>%
+  mutate(fishnetid = fishernet_fishnetid, 
+         fishnet_area = fishernet_fishnet_area)
 
-fishnet_pa <-  read_csv(file.path(folder, "fishnet_pa.csv"))
-visit_id <- read_csv("xxx/output/visit/v4/fishnet_humanvisit.csv") %>%
+fishnet_pa$pa_ratio <- fishnet_pa$overlap_area/fishnet_pa$fishernet_fishnet_area
+
+fishnet_urban <- read_csv(file.path(folder, "fishent_urban.csv")) %>%
+  mutate(
+    fishnetid   = fishernet_fishnetid,
+    fishnet_area = fishernet_fishnet_area
+  ) %>%
+  group_by(fishnetid) %>%
+  summarise(
+    sum_urban    = sum(overlap_area, na.rm = TRUE),
+    fishnet_area = first(fishnet_area),
+    urban_area   = sum_urban / fishnet_area,
+    .groups = "drop"
+  ) %>%
+  select(fishnetid, urban_area)
+
+fishnet_pa  <- fishnet_pa %>% filter(overlap_area > 0) %>%
+  left_join(fishnet_urban, by = 'fishnetid') %>%
+  mutate(pa_ratio = overlap_area / fishnet_area)
+
+fishnet_pa <- fishnet_pa %>%
+  filter(is.na(urban_area) | urban_area < 0.25)
+
+visit_id <- read_csv("C:/Users/qd2n22/OneDrive - University of Southampton/Project_EnvironmentalUrbanisation_V1.2_12.31/output/visit/v5_revise/fishnet_humanvisit.csv") %>%
+  mutate(fishnetid = fishernet_fishnetid) %>%
   dplyr::select(fishnetid, visit_latitude, visit_longitude)
 
-
-df <- fishnet_pa %>%
+df <- fishnet_pa  %>%
   left_join(visit_id, by = "fishnetid")
 
 df <- df %>%
@@ -185,7 +52,21 @@ df <- df %>%
     right = FALSE
   ))
 
+df$continent <- countrycode(df$FIRST_ISO3, origin = "iso3c", destination = "continent")
+table(df$continent)
+df$continent[df$FIRST_ISO3 == 'CCK'] <- "Oceania" 
 
+df$regions <- countrycode(df$FIRST_ISO3, origin = "iso3c", destination = "region")
+
+df$region <- df$continent
+df$region[
+  df$continent == "Americas" & df$regions == "North America"
+] <- "North America"
+
+df$region[
+  df$continent == "Americas" & df$regions == "Latin America & Caribbean"
+] <- "Latin America & Caribbean"
+table(df$region)
 
 #install.packages("WDI")
 library(WDI)
@@ -205,18 +86,13 @@ df$income <- factor(df$income, levels = c("High income", "Upper middle income",
                                                 "Lower middle income", "Low income"))
 
 
-
-
-visit_inten <- read_csv('xxx/output/visit/v4/df_inten_per.csv')
-visit_space <- read_csv('xxx1/output/visit/v4/df_space.csv')
+visit_inten <- read_csv('xxx/output/visit/df_inten_per.csv')
+visit_space <- read_csv('xxx1/output/visit/df_space.csv')
 
 visit_index_inten <- df %>% left_join(visit_inten, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 visit_index_space <- df %>% left_join(visit_space, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
-
-overlap_path <- "xxx/output/figures/Paper 3/v5_correspodingvisitv4/2.overlap_pa"
-
-
+overlap_path <- "xxx/output/figures/2.overlap_pa"
 
 visit_index_inten <- visit_index_inten %>%
   mutate(
@@ -224,8 +100,7 @@ visit_index_inten <- visit_index_inten %>%
     urban_visit_time = replace_na(urban_visit_time, 0),
     sub_visit_time = replace_na(sub_visit_time, 0),
     rural_visit_time = replace_na(rural_visit_time, 0)
-  )
-
+  ) 
 
 visit_index_space <- visit_index_space %>%
   mutate(
@@ -238,9 +113,7 @@ visit_index_space <- visit_index_space %>%
     rural_overlap = rural_flag * overlap_area,
     sub_overlap   = sub_flag   * overlap_area,
     urban_overlap = urban_flag * overlap_area
-  )
-
-
+  ) 
 
 pa_info <- visit_index_space %>%
   group_by(pa_id) %>%
@@ -252,9 +125,6 @@ pa_info <- visit_index_space %>%
     IUCN_rank = first(MIN_IUCN_rank),
     .groups = "drop"
   )
-
-
-
 
 calc_space_ratio <- function(data, pa_info, col_overlap) {
    data %>%
@@ -274,8 +144,6 @@ rural_ext <- calc_space_ratio(visit_index_space, pa_info, "rural_overlap")
 sub_ext <- calc_space_ratio(visit_index_space, pa_info, "sub_overlap")
 urban_ext <- calc_space_ratio(visit_index_space, pa_info, "urban_overlap")
 
-
-
 all_ext %>%
   summarise(
     total_overlap = sum(space, na.rm = TRUE),
@@ -283,10 +151,6 @@ all_ext %>%
     ratio = total_overlap / total_pa,
     .groups = "drop"
   )
-#0.170
-
-
-
 
 summarise_overlap <- function(data, group_var) {
   data %>%
@@ -329,7 +193,6 @@ ggsave(
   height = 7
 )
 
-
 region_ext_rural <- summarise_overlap(rural_ext, region)%>%
   mutate(urban = "rural")
 region_ext_sub <- summarise_overlap(sub_ext, region)%>%
@@ -346,8 +209,6 @@ global_space <- space_region %>%
             total_pa = sum(total_pa, na.rm=TRUE),
             ratio = total_overlap/total_pa,.groups = "drop") %>%
   mutate(region = "Global")
-#0.166; 0.0972; 0.127
-
 
 
 # Combine global summary with original region summaries
@@ -373,7 +234,6 @@ ggsave(
   width = 8,
   height = 7
 )
-
 
 size_ext_rural <- summarise_overlap(rural_ext, size)%>%
   mutate(urban = "rural")
@@ -402,9 +262,6 @@ ggsave(
   width = 8,
   height = 7
 )
-
-
-
 
 income_ext_rural <- summarise_overlap(rural_ext, income)%>%
   mutate(urban = "rural")
@@ -436,9 +293,6 @@ ggsave(
 
 
 ######################################intensity
-
-
-
 visit_index_inten <- visit_index_inten %>%
   mutate(
     inten_den_rural = rural_visit_time / fishnet_area,
@@ -451,7 +305,6 @@ visit_index_inten <- visit_index_inten %>%
     inten_over_urban = inten_den_urban * overlap_area,
     inten_over_all = inten_den_all * overlap_area
   )
-
 
 df_inten_all <- visit_index_inten %>%
   group_by(pa_id) %>%
@@ -467,8 +320,6 @@ df_inten_all <- pa_info %>%
     intensity_ratio = inten_overlap / area_pa
   )
 
-
-
 df_inten_all %>% 
   summarise(
     total_intensity = sum(inten_overlap, na.rm = TRUE),
@@ -476,11 +327,6 @@ df_inten_all %>%
     ratio = total_intensity / total_area,
     .groups = "drop"
   )
-#10.6
-
-
-
-
 
 df_inten_long <- visit_index_inten %>%
   select(pa_id, pa_area, region, income, size, MIN_IUCN_rank,
@@ -517,8 +363,6 @@ calc_intensity_overlap <- function(data, pa_info) {
 
 intensity_df <- calc_intensity_overlap(df_inten_long, pa_info)
 
-
-
 summarise_intensity <- function(data, group_var) {
   data %>%
     group_by({{ group_var}}, urban) %>%
@@ -550,8 +394,14 @@ ggsave(
   width = 8,
   height = 7
 )
-
-
+rank_summary <- df_inten_all %>%
+  group_by(IUCN_rank) %>%
+  summarise(
+    total_intensity = sum(inten_overlap, na.rm = TRUE),
+    total_area = sum(area_pa, na.rm = TRUE),
+    ratio = total_intensity / total_area,
+    .groups = "drop"
+  )
 
 
 region <- summarise_intensity(intensity_df, region)
@@ -562,7 +412,6 @@ inten_global_summary <- region %>%
             total_pa = sum(total_pa, na.rm=TRUE),
             ratio = total_intensity/total_pa,.groups = "drop") %>%
   mutate(region = "Global")
-#rural5.64; sub 1.39; urban 3.52
 
 
 inten_region_all <- bind_rows(region, inten_global_summary)
@@ -597,12 +446,6 @@ region_summary <- df_inten_all %>%
   )
 
 
-
-
-
-
-
-
 size <- summarise_intensity(intensity_df,  size)
 
 ggplot(size, aes(x = size, y = ratio, fill = urban)) +
@@ -624,8 +467,6 @@ ggsave(
   height = 7
 )
 
-
-
 income <-summarise_intensity(intensity_df, income)
 income <- income %>% filter(!is.na(income))
 ggplot(income, aes(x = as.factor(income), y = ratio, fill = urban)) +
@@ -646,8 +487,12 @@ ggsave(
   width = 8,
   height = 7
 )
-
-
-
-
+income_summary <- df_inten_all %>%
+  group_by(income) %>%
+  summarise(
+    total_intensity = sum(inten_overlap, na.rm = TRUE),
+    total_area = sum(area_pa, na.rm = TRUE),
+    ratio = total_intensity / total_area,
+    .groups = "drop"
+  )
 
