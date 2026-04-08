@@ -238,10 +238,10 @@ ggplot(fit_df, aes(x = logv, y = sr_fit)) +
 
 ##############
 
-install.packages("gam.hp")      # separate CRAN pkg
+install.packages("gam.hp")  
 library(gam.hp)
-res_dev  <- gam.hp(fit, type = "dev")    # by explained deviance
-res_adj  <- gam.hp(fit, type = "adjR2")  # by adjusted R^2 (optional)
+res_dev  <- gam.hp(fit, type = "dev")   
+res_adj  <- gam.hp(fit, type = "adjR2") 
 
 print(res_dev)
 plot(res_dev)  
