@@ -3,7 +3,30 @@ library(INLA)
 
 vars <- c("elevation", "slope", "hf", "road_den", "access", "build_den", "ndvi")
 
-fishnet_pa <-  read_csv(file.path(folder, "fishnet_pa.csv"))
+fishnet_pa <- read_csv(file.path(folder, "fishnet_pa_up.csv")) %>%
+  mutate(fishnetid = fishernet_fishnetid, 
+         fishnet_area = fishernet_fishnet_area)
+
+fishnet_pa$pa_ratio <- fishnet_pa$overlap_area/fishnet_pa$fishernet_fishnet_area
+
+fishnet_urban <- read_csv(file.path(folder, "fishent_urban.csv")) %>%
+  mutate(
+    fishnetid   = fishernet_fishnetid,
+    fishnet_area = fishernet_fishnet_area
+  ) %>%
+  group_by(fishnetid) %>%
+  summarise(
+    sum_urban    = sum(overlap_area, na.rm = TRUE),
+    fishnet_area = first(fishnet_area),
+    urban_area   = sum_urban / fishnet_area,
+    .groups = "drop"
+  ) %>%
+  select(fishnetid, urban_area)
+
+fishnet_pa <- fishnet_pa %>% filter(overlap_area > 0) %>%
+  left_join(fishnet_urban, by = 'fishnetid') %>%
+  mutate(pa_ratio = overlap_area / fishnet_area)%>%
+  filter(is.na(urban_area) | urban_area < 0.25)
 
 
 match <- read_csv('xxx/output/visit/covar_resample/match_var.csv')
@@ -20,7 +43,6 @@ pa_coverage_check <- pa_var %>%
   ) %>%
   mutate(overlap_ratio = total_overlap / pa_area) %>%
   filter(overlap_ratio >= 0.95) 
-#0.985, 79073/80278
 
 pa_var_filtered <- pa_var %>%
   semi_join(pa_coverage_check, by = "pa_id")
@@ -83,16 +105,14 @@ pa_summary_f <- pa_summary_f %>%
   )
 
 
-
-
-
-visit_id <- read_csv("xxx/output/visit/v4/fishnet_humanvisit.csv") %>%
+visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
+  mutate(fishnetid = fishernet_fishnetid) %>%
   dplyr::select(fishnetid, visit_latitude, visit_longitude)
 
 
 
 ######
-visit_space <- read_csv('xxx/output/visit/v4/df_space.csv')
+visit_space <- read_csv('xxx/output/visit/df_space.csv')
 visit_index_space <- visit_space %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
 for_space <- fishnet_pa %>%
@@ -115,8 +135,6 @@ pa_summary_space <- pa_summary_f %>%
   left_join(visit_space_type, by = 'pa_id')
 
 
-
-
 pa_summary_space$iucn_group <- dplyr::case_when(
   pa_summary_space$MIN_IUCN_rank %in% c("1", "2", "3") ~ "Astrict",
   pa_summary_space$MIN_IUCN_rank %in% c("4", "5", "6", "7") ~ "Bless_strict",
@@ -135,17 +153,20 @@ data_space <- pa_summary_space %>%
     region = as.factor(region)
   ) %>%
   na.omit()
-write.csv(data_space, 'xxx/output/visit/v4/pa_modelvar_space.csv')
 
-
-
-
-data_space <- read_csv('xxx/output/visit/v4/pa_modelvar_space.csv')
 to_log <- c("pa_area", "access", "build_den", "road_den", "local100pop")
 data_space <- data_space %>%
   mutate(across(
     all_of(c("pa_area", "access", "build_den", "road_den", "local100pop")),
-    ~ log(.x + 0.1),
+    ~ {
+      pos <- .x[!is.na(.x) & .x > 0]
+      if (length(pos) == 0) {
+        NA_real_
+      } else {
+        offset <- 0.5 * min(pos)
+        log(.x + offset)
+      }
+    },
     .names = "log_{.col}"
   ))
 space_data_scaled <- data_space %>%
@@ -155,11 +176,6 @@ space_data_scaled <- data_space %>%
     ~ as.numeric(scale(.x))
   ))
 space_data_scaled$space_all[space_data_scaled$space_all > 1] <- 1
-
-
-hist(space_data_scaled$space_all, breaks = 50, main = "Distribution of space_all", xlab = "space_all")
-
-
 
 
 var_space <- c("log_pa_area", "iucn_group", "slope", "elevation","hf",
@@ -181,16 +197,13 @@ space_data_scaled$Y_km <- coords2[, 2] / 1000
 mesh_space <- make_mesh(space_data_scaled, xy_cols = c("X_km", "Y_km"), cutoff = 50) 
 
 
-
 space_data_scaled$y_zero <- ifelse(space_data_scaled$space_all == 0, 1, 0)
 space_data_scaled$y_one <- ifelse(space_data_scaled$space_all == 1, 1, ifelse(space_data_scaled$space_all < 1 & space_data_scaled$space_all != 0, 0, NA))
 space_data_scaled$y_proportion <- ifelse(space_data_scaled$space_all < 1 & space_data_scaled$space_all > 0, space_data_scaled$space_all, NA)
 
-
 space_data_scaled$FIRST_ISO3 <- as.factor(space_data_scaled$FIRST_ISO3)
 space_data_scaled$region <- as.factor(space_data_scaled$region)
 space_data_scaled$iucn_group <- as.factor(space_data_scaled$iucn_group)
-
 
 form_zero <- as.formula(paste("y_zero ~", paste(var_space, collapse = " + "), "+ (1 | FIRST_ISO3)"))
 
@@ -201,7 +214,6 @@ fit_zero <- sdmTMB(
   spatial = "on",
   family = binomial(link = "logit")
 )
-
 
 form_one <- as.formula(paste("y_one ~", paste(var_space, collapse = " + "), "+ (1 | FIRST_ISO3)"))
 data_one <- subset(space_data_scaled, !is.na(y_one))
@@ -225,7 +237,6 @@ fit_one <- sdmTMB(
 )
 
 
-
 form_proportion <- as.formula(paste("y_proportion ~", paste(var_space, collapse = " + "), "+ (1 | FIRST_ISO3)"))
 data_proportion <- subset(space_data_scaled, !is.na(y_proportion))
 
@@ -239,7 +250,6 @@ data_proportion$X_km <- coords_proportion[, 1] / 1000
 data_proportion$Y_km <- coords_proportion[, 2] / 1000
 mesh_proportion <- make_mesh(data_proportion, xy_cols = c("X_km", "Y_km"), cutoff = 50)  
 
-
 fit_proportion <- sdmTMB(
   formula = form_proportion,
   data = data_proportion,
@@ -247,7 +257,6 @@ fit_proportion <- sdmTMB(
   spatial = "on",
   family = Beta(link = "logit")
 )
-
 
 sim_zero <- simulate(fit_zero, nsim =100, type = "mle-mvn")
 r_zero <- dharma_residuals(sim_zero, fit_zero, return_DHARMa = TRUE)
@@ -263,17 +272,12 @@ plot(r_one)
 DHARMa::testDispersion(r_one)
 DHARMa::testZeroInflation(r_one)
 
-
 sim_proportion <- simulate(fit_proportion, nsim =100, type = "mle-mvn")
 r_proportion <- dharma_residuals(sim_proportion, fit_proportion, return_DHARMa = TRUE)
 plot(r_proportion)
 #DHARMa::testResiduals(r_sdm)
 DHARMa::testDispersion(r_proportion)
 DHARMa::testZeroInflation(r_proportion)
-
-
-
-
 
 coef(fit_zero)
 coef(fit_one)
@@ -288,13 +292,43 @@ coef_one$model <- "One"
 coef_prop <- tidy(fit_proportion, effects = "fixed",conf.int = TRUE)
 coef_prop$model <- "Proportion"
 coef_all <- rbind(coef_zero, coef_one, coef_prop)
-write.csv(coef_all, 'xxx/output/visit/v4/space_sdm.csv')
 
 
+var_order <- c(
+  "log_pa_area", "slope", "elevation", "hf", 
+  "log_local100pop", "log_road_den", "log_access", "log_build_den", 
+  "ndvi",  "gdp", "cc",
+  "iucn_groupBless_strict", "iucn_groupCnot_classified",
+  "regionAsia", "regionEurope", "regionLatin America & Caribbean",
+  "regionNorth America", "regionOceania"
+)
 
-############################
+coef_all <- coef_all %>% 
+  filter(term %in% var_order) %>%
+  mutate(term = factor(term, levels = rev(var_order)))
 
-visit_intensity <- read_csv('xxx/output/visit/v4/df_inten_per.csv')
+ggplot(coef_all, aes(x = estimate, y = term, color = model)) +
+  geom_point(position = position_dodge(width = 0.6), size = 2) +
+  geom_errorbarh(
+    aes(xmin = conf.low, xmax = conf.high),
+    height = 0.6,
+    position = position_dodge(width = 0.6)
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(
+    values = c(
+      "Zero" = "#2E8B57",     
+      "Proportion" = "#D95F02",
+      "One" = "#E78AC3"      
+    )
+  ) +
+  labs(x = "Estimate", y = NULL, title = "space") +
+  theme_bw()
+
+
+############################intensity model
+
+visit_intensity <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
 visit_index_inten <- visit_intensity %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
 for_inten <- fishnet_pa %>%
@@ -328,8 +362,6 @@ visit_inten_type <- for_inten %>%
   select(pa_id, inten_all)
 
 
-
-
 pa_summary_inten <- pa_summary_f %>% 
   left_join(visit_inten_type, by = 'pa_id')
 
@@ -339,9 +371,6 @@ pa_summary_inten$iucn_group <- dplyr::case_when(
   pa_summary_inten$MIN_IUCN_rank %in% c("4", "5", "6", "7") ~ "Bless_strict",
   TRUE ~ "Cnot_classified"
 )
-
-
-hist(pa_summary_inten$inten_all)
 
 
 predictors <- c("pa_area", "iucn_group", "elevation", "slope",
@@ -356,17 +385,20 @@ data_inten <- pa_summary_inten %>%
     region = as.factor(region)
   ) %>%
   na.omit()
-write.csv(data_inten, 'xxx/output/visit/v4/pa_modelvar_inten.csv')
-#77942
 
-
-
-data_inten <- read_csv('xxx/output/visit/v4/pa_modelvar_inten.csv')
 to_log <- c("pa_area", "access", "build_den", "road_den", "local100pop")
 data_inten <- data_inten %>%
   mutate(across(
     all_of(c("pa_area", "access", "build_den", "road_den", "local100pop")),
-    ~ log(.x + 0.1),
+    ~ {
+      pos <- .x[!is.na(.x) & .x > 0]
+      if (length(pos) == 0) {
+        NA_real_
+      } else {
+        offset <- 0.5 * min(pos)
+        log(.x + offset)
+      }
+    },
     .names = "log_{.col}"
   ))
 inten_data_scaled <- data_inten %>%
@@ -375,7 +407,6 @@ inten_data_scaled <- data_inten %>%
       ndvi, log_local100pop, gdp, cc),
     ~ as.numeric(scale(.x))
   ))
-
 
 
 var_inten <- c("log_pa_area", "iucn_group", "slope", "elevation","hf",
@@ -396,7 +427,6 @@ inten_data_scaled$X_km <- coords_inten[, 1] / 1000
 inten_data_scaled$Y_km <- coords_inten[, 2] / 1000
 
 mesh_inten <- make_mesh(inten_data_scaled, xy_cols = c("X_km", "Y_km"), cutoff = 50)  
-
 
 inten_data_scaled$FIRST_ISO3 <- as.factor(inten_data_scaled$FIRST_ISO3)
 inten_data_scaled$region <- as.factor(inten_data_scaled$region)
@@ -419,4 +449,23 @@ DHARMa::testZeroInflation(r_sdm)
 
 coef_inten <- tidy(fit_inten, conf.int = TRUE)
 
-write.csv(coef_inten, 'xxx/output/visit/v4/inten_sdm.csv')
+coef_inten  <- coef_inten[coef_inten$term != "(Intercept)", ]
+
+var_order <- c(
+  "log_pa_area", "slope", "elevation", "hf", 
+  "log_local100pop", "log_road_den", "log_access", "log_build_den", 
+  "ndvi",  "gdp", "cc",
+  "iucn_groupBless_strict", "iucn_groupCnot_classified",
+  "regionAsia", "regionEurope", "regionLatin America & Caribbean",
+  "regionNorth America", "regionOceania"
+)
+
+coef_inten <- coef_inten[coef_inten$term %in% var_order, ]
+coef_inten$term <- factor(coef_inten$term, levels = rev(var_order))
+
+ggplot(coef_inten, aes(x = estimate, y = term)) + 
+  geom_point(color = "#5F4B8BFF", size = 2) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.6, color = "#8B79A8") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  labs(x = "Estimate", y = NULL, title = "Fixed Effects with 95% CI") +
+  theme_bw()
