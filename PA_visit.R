@@ -34,7 +34,7 @@ fishnet_pa  <- fishnet_pa %>% filter(overlap_area > 0) %>%
 fishnet_pa <- fishnet_pa %>%
   filter(is.na(urban_area) | urban_area < 0.25)
 
-visit_id <- read_csv("C:/Users/qd2n22/OneDrive - University of Southampton/Project_EnvironmentalUrbanisation_V1.2_12.31/output/visit/v5_revise/fishnet_humanvisit.csv") %>%
+visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
   mutate(fishnetid = fishernet_fishnetid) %>%
   dplyr::select(fishnetid, visit_latitude, visit_longitude)
 
