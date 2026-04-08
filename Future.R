@@ -104,8 +104,15 @@ lapply(countries, process_country_ssp)
 
 
 
+###coverage - weighted factor for comparision
+coverage <- read_csv("xxx/output/visit/fabhome_fraction.csv")
+
 process_country_ssp <- function(country) {
   iso <- tolower(countrycode(country, "country.name", "iso3c"))
+  
+  country_name <- country
+  cov_row <- coverage %>% filter(country == country_name)
+  scale_factor <- with(cov_row, fraction)
   
   # Read activity data
   df <- read_csv(file.path(activity_dir, paste0("activity_", country, ".csv")))
@@ -136,8 +143,8 @@ process_country_ssp <- function(country) {
     df_scaled <- df %>%
       left_join(scale_factors, by = c("home_latitude" = "lat", "home_longitude" = "lon")) %>%
       mutate(
-        scaled_pop = pop * scaling_factor,
-        act_time = visit_fraction * scaled_pop
+        scaled_pop = pop * scaling_factor/scale_factor,
+        act_time = mean_visit_fraction * scaled_pop
       )
     
     
@@ -165,7 +172,8 @@ visit_intensity_all <- all_country_results %>%
   purrr::compact() %>%   
   purrr::map_dfr(bind_rows)
 
-write.csv(visit_intensity_all, "xxx/output/visit/v4/ssps_all.csv")
+write.csv(visit_intensity_all, "xxx/output/visit/ssps_all.csv")
+
 
 
 scale_directory <- "xxx/output/visit/ssp_change_update"
@@ -339,14 +347,42 @@ folder <- "xxx/output/visit/covar_resample"
 
 process_ssp_visit_intensity <- function(combined_df) {
     
-  pa <- read_csv(file.path(folder, "pa_greater1_nofbcountry.csv"))
+  pa <- read_csv(file.path(folder, "pa.csv"))
   
-  visit_id <- read_csv("xxx/output/visit/v4/fishnet_humanvisit.csv") %>%
+  visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
+    mutate(fishnetid = fishernet_fishnetid) %>%
     dplyr::select(fishnetid, visit_latitude, visit_longitude)
+  
   
   visit_index <- combined_df %>% left_join(visit_id, by = c("visit_latitude", "visit_longitude"))
   
-  fishnet_pa <- read_csv(file.path(folder, "fishnet_pa.csv"))
+  fishnet_pa <- read_csv(file.path(folder, "fishnet_pa_up.csv")) %>%
+    mutate(fishnetid = fishernet_fishnetid, 
+           fishnet_area = fishernet_fishnet_area)
+  
+  fishnet_pa$pa_ratio <- fishnet_pa$overlap_area/fishnet_pa$fishernet_fishnet_area
+  
+  fishnet_urban <- read_csv(file.path(folder, "fishent_urban.csv")) %>%
+    mutate(
+      fishnetid   = fishernet_fishnetid,
+      fishnet_area = fishernet_fishnet_area
+    ) %>%
+    group_by(fishnetid) %>%
+    summarise(
+      sum_urban    = sum(overlap_area, na.rm = TRUE),
+      fishnet_area = first(fishnet_area),
+      urban_area   = sum_urban / fishnet_area,
+      .groups = "drop"
+    ) %>%
+    select(fishnetid, urban_area)
+  
+  
+  fishnet_pa  <- fishnet_pa %>% filter(overlap_area > 0) %>%
+    left_join(fishnet_urban, by = 'fishnetid') %>%
+    mutate(pa_ratio = overlap_area / fishnet_area)
+  
+  fishnet_pa <- fishnet_pa %>%
+    filter(is.na(urban_area) | urban_area < 0.25)
   
   df <- fishnet_pa %>% left_join(visit_index, by = "fishnetid") %>%
     mutate(across(c(sum_visit_time, rural_visit_time, sub_visit_time, urban_visit_time), replace_na, 0))
@@ -427,29 +463,26 @@ process_ssp_visit_intensity <- function(combined_df) {
         intensity_ratio = inten_overlap / area_pa
       )
   }
-  
- 
+
   intensity_df <- calc_intensity_overlap(df_inten_long, pa_info)
   
-  
-  
   income_summary <- intensity_df %>%
-      group_by(region, urban) %>%
+      group_by(income, urban) %>%
       summarise(
         total_intensity = sum(inten_overlap, na.rm = TRUE),
         total_area = sum(area_pa, na.rm = TRUE),
         ratio = total_intensity / total_area,
         .groups = "drop"
       )
-  income_summary <- income_summary  %>% filter(!is.na(region))
+  income_summary <- income_summary  %>% filter(!is.na(income))
   return(income_summary)
 }
 
-combined_df <- read_csv('xxx/output/visit/v4/df_inten_per.csv')
+combined_df <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
 base <- process_ssp_visit_intensity(combined_df)
 
 
-ssp <- read_csv("xxx/output/visit/v4/ssps_all.csv")
+ssp <- read_csv( "xxx/output/visit/ssps_all.csv")
 ssp1 <- ssp %>% filter(scenario == 'ssp1')
 ssp2 <- ssp %>% filter(scenario == 'ssp2')
 ssp3 <- ssp %>% filter(scenario == 'ssp3')
@@ -459,12 +492,13 @@ ssp5 <- ssp %>% filter(scenario == 'ssp5')
 
 process_ssp <- function(df) {
   reshaped <- df %>%
+    filter(!is.na(visit_latitude)) %>%
     mutate(urban = case_when(
       urban == 1 ~ "rural_visit_time",
       urban == 2 ~ "sub_visit_time",
       urban == 3 ~ "urban_visit_time"
     )) %>%
-    select(visit_latitude, visit_longitude, urban, visit_time) %>%
+    dplyr::select(visit_latitude, visit_longitude, urban, visit_time) %>%
     pivot_wider(names_from = urban, values_from = visit_time, values_fill = 0)
   
   original_sum <- df %>%
@@ -497,20 +531,10 @@ s5$scenario <- "ssp5"
 
 all_ssp <- bind_rows(base, s1, s2, s3, s4, s5)
 
+
 all_table <- all_ssp %>%
   filter(urban == "all") %>%
   select(income, scenario, ratio) %>%
-  pivot_wider(names_from = scenario, values_from = ratio)
-
-diff_table <- all_table %>%
-  pivot_longer(cols = starts_with("ssp"), names_to = "ssp", values_to = "value") %>%
-  mutate(diff = value - base)
-
-
-
-all_table <- all_ssp %>%
-  filter(urban == "all") %>%
-  select(region, scenario, ratio) %>%
   pivot_wider(names_from = scenario, values_from = ratio)
 
 global_table <- all_ssp %>%
@@ -522,33 +546,27 @@ global_table <- all_ssp %>%
   ) %>%
   pivot_wider(names_from = scenario, values_from = ratio) %>%
   mutate(region = "Global") %>%
-  select(region, everything()) 
+  select(region, everything())  # Make sure region is first
+
 
 
 final_table <- bind_rows(global_table, all_table)
 diff_table <- final_table %>%
   pivot_longer(cols = starts_with("ssp"), names_to = "ssp", values_to = "value") %>%
   mutate(diff = value - base)
+#write.csv(diff_table, "xxx/output/visit/ssps_income.csv")
+###same for size, region, IUCN category
 
 
 ssp_colors <- c(
   "ssp1" = "#0098CC",  
   "ssp2" = "#1B9E77", 
   "ssp3" = "#FF7F32", 
-  "ssp4" = "#8C3FAE",  
-  "ssp5" = "#D62828" 
+  "ssp4" = "#8C3FAE", 
+  "ssp5" = "#D62828"  
 )
 
-diff_region$region <- factor(diff_region$region, levels = c("Global", setdiff(unique(diff_region$region), "Global")))
-
-ggplot(diff_region, aes(x = region, y = diff, fill = ssp)) +
-  geom_bar(stat = "identity", position = position_dodge(), width = 0.6) +
-  scale_fill_manual(values = ssp_colors) +
-  labs(x = "SSP", y = "Difference from base", fill = "region") +
-  theme_bw()
-
-
-diff_income <- read_csv("xxx/output/visit/v4/ssps_income.csv")
+diff_income <- read_csv("xxx/output/visit/ssps_income.csv")
 diff_income$income <- factor(
   diff_income$income,
   levels = c("High income", "Upper middle income", "Lower middle income", "Low income")
@@ -560,7 +578,7 @@ ggplot(diff_income, aes(x = income, y = diff, fill = ssp)) +
   theme_bw()
 
 
-diff_size <- read_csv("xxx/output/visit/v4/ssps_size.csv")
+diff_size <- read_csv("xxx/output/visit/ssps_size.csv")
 diff_size$size <- factor(
   diff_size$size,
   levels = c(
@@ -576,8 +594,7 @@ ggplot(diff_size, aes(x = size, y = diff, fill = ssp)) +
   theme_bw()
 
 
-
-diff_rank <- read_csv("xxx/output/visit/v4/ssps_iucn.csv")
+diff_rank <- read_csv("xxx/output/visit/ssps_rank.csv")
 
 ggplot(diff_rank, aes(x = as.factor(IUCN_rank), y = diff, fill = ssp)) +
   geom_bar(stat = "identity", position = position_dodge(), width = 0.6) +
@@ -585,3 +602,12 @@ ggplot(diff_rank, aes(x = as.factor(IUCN_rank), y = diff, fill = ssp)) +
   labs(x = "SSP", y = "Difference from base", fill = "IUCN_rank") +
   theme_bw()
 
+diff_region <- read_csv("xxx/output/visit/ssps_region.csv")
+diff_region$region <- factor(diff_region$region, levels = c("Global", setdiff(unique(diff_region$region), "Global")))
+
+ggplot(diff_region, aes(x = region, y = diff, fill = ssp)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.6) +
+  scale_fill_manual(values = ssp_colors) +
+  labs(x = "SSP", y = "Difference from base", fill = "region") +
+  theme_bw()
+                    
