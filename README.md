@@ -16,7 +16,7 @@ The maps are stored as.tiff files: **space.tif**, **intensity.tif** (will be pub
 #7 From rural + suburban + urban centre  
 
 **intensity.tif**:  
-visits, white means zero
+visits (daily, person-days), white means zero
 
 
 
