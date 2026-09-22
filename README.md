@@ -16,7 +16,7 @@ The maps are stored as.tiff files: **space.tif**, **intensity.tif** (will be pub
 #7 From rural + suburban + urban centre  
 
 **intensity.tif**:  
-visits (daily, person-days), white means zero
+Natural-log-transformed daily visit intensity. Back-transform using exp(x) to obtain visit intensity in person-days; white indicates zero visits.
 
 
 
