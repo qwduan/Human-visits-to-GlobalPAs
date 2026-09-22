@@ -3,7 +3,7 @@
 
 library(dplyr); library(readr); library(ggplot2); library(tidyr); library(countrycode)
 
-folder <- "xxx/output/visit/covar_resample"
+folder <- "/output/visit/covar_resample"
 pa <- read_csv(file.path(folder, "pa_greater1.csv"))
 
 #filter urban pixels
@@ -34,7 +34,7 @@ fishnet_pa  <- fishnet_pa %>% filter(overlap_area > 0) %>%
 fishnet_pa <- fishnet_pa %>%
   filter(is.na(urban_area) | urban_area < 0.25)
 
-visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
+visit_id <- read_csv("/output/visit/fishnet_humanvisit.csv") %>%
   mutate(fishnetid = fishernet_fishnetid) %>%
   dplyr::select(fishnetid, visit_latitude, visit_longitude)
 
@@ -86,13 +86,13 @@ df$income <- factor(df$income, levels = c("High income", "Upper middle income",
                                                 "Lower middle income", "Low income"))
 
 
-visit_inten <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
-visit_space <- read_csv('xxx1/output/visit/df_space.csv')
+visit_inten <- read_csv('/output/visit/df_inten_per_adj.csv')
+visit_space <- read_csv('/output/visit/df_space.csv')
 
 visit_index_inten <- df %>% left_join(visit_inten, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 visit_index_space <- df %>% left_join(visit_space, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
-overlap_path <- "xxx/output/figures/2.overlap_pa"
+overlap_path <- "/output/figures/2.overlap_pa"
 
 visit_index_inten <- visit_index_inten %>%
   mutate(
