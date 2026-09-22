@@ -2,15 +2,15 @@ library(ggnewscale); library(DHARMa); library(readr)
 library(dplyr); library(mgcViz)
 library(terra); library(sf)
 
-fra_df <- read_csv('xxx/output/visit/home_fra_update.csv')
+fra_df <- read_csv('/output/visit/home_fra_update.csv')
 home <- fra_df %>% select(lat, lon, pop)
 
-intensity_df <- read_csv('xxx/output/visit/df_inten_per_adj.csv') %>%
+intensity_df <- read_csv('/output/visit/df_inten_per_adj.csv') %>%
   left_join(home, by = c('visit_latitude'='lat', 'visit_longitude' = 'lon'))
 
-sr_bird <- rast("xxx/Birds/Richness_10km.tif")
-sr_mam <- rast("xxx/Mammals/Richness_10km.tif")
-sr_amp <- rast("xxx/Amphibians/Richness_10km.tif")
+sr_bird <- rast("/Birds/Richness_10km.tif")
+sr_mam <- rast("/Mammals/Richness_10km.tif")
+sr_amp <- rast("/Amphibians/Richness_10km.tif")
 
 sf_pts <- st_as_sf(intensity_df, coords = c("visit_longitude", "visit_latitude"), crs = 4326)
 
@@ -35,7 +35,7 @@ r_proj <- terra::project(r_wgs, target_crs, method = "bilinear")
 
 
 
-adm0 <- st_read("xxx/World_Countries_Generalized.shp")
+adm0 <- st_read("/World_Countries_Generalized.shp")
 adm0 <- st_transform(adm0, crs = crs(r_wgs))
 adm0_vect <- vect(adm0)
 
@@ -87,7 +87,7 @@ centroids_df <- data.frame(
   visit_intensity = visit[, 2]
 )
 
-nodata_map <- st_read("xxx/output/visit/map_country/country_non.shp")
+nodata_map <- st_read("/output/visit/map_country/country_non.shp")
 nodata_map <- st_transform(nodata_map, crs = st_crs(centroids_sf))
 idx_inside <- which(lengths(st_intersects(centroids_sf, nodata_map)) > 0)
 
@@ -103,7 +103,7 @@ centroids_df <- centroids_df %>%
 
 
 com <- centroids_df
-over <- read_csv('xxx/output/visit/factor10km_pa_intersect.csv')
+over <- read_csv('/output/visit/factor10km_pa_intersect.csv')
 
 over <- over %>%
   mutate(id = as.character(Id))
@@ -123,22 +123,22 @@ com_overlap$in_PA_alt <- ifelse(com_overlap$overlap > 0, "Inside PA", "Outside P
 
 
 
-hf_proj <- rast('xxx/output/visit/factor/hf.reproject.tif')
+hf_proj <- rast('/output/visit/factor/hf.reproject.tif')
 hf_final <- resample(hf_proj, sr_bird, method = "average")
 
-slope_proj <- rast('xxx/output/visit/factor/slope.reproject.tif')
+slope_proj <- rast('/output/visit/factor/slope.reproject.tif')
 slope_final <- resample(slope_proj, sr_bird, method = "average")
 
-ele_proj <- rast('xxx/output/visit/factor/ele.reproject.tif')
+ele_proj <- rast('/output/visit/factor/ele.reproject.tif')
 ele_final <- resample(ele_proj, sr_bird, method = "average")
 
-tem_proj <- rast('xxx/output/visit/factor/tem.reproject.tif')
+tem_proj <- rast('/output/visit/factor/tem.reproject.tif')
 tem_final <- resample(tem_proj, sr_bird, method = "average")
 
-ndvi_proj <- rast('xxx/output/visit/factor/ndvi.reproject.tif')
+ndvi_proj <- rast('/output/visit/factor/ndvi.reproject.tif')
 ndvi_final <- resample(ndvi_proj, sr_bird, method = "average")
 
-land_proj <- rast('xxx/output/visit/factor/land.reproject.tif')
+land_proj <- rast('/output/visit/factor/land.reproject.tif')
 land_proj <- as.factor(land_proj)
 land_final <- resample(land_proj, sr_bird, method = "mode")
 
@@ -151,7 +151,7 @@ com_overlap$tem <- terra::extract(tem_final, pts)[,2]
 com_overlap$ndvi <- terra::extract(ndvi_final, pts)[,2]
 com_overlap$land <- terra::extract(land_final, pts)[,2]
 
-prec_orig <- rast("xxx/output/visit/factor/prec.tif") 
+prec_orig <- rast("/output/visit/factor/prec.tif") 
 prec_reproj <- terra::project(prec_orig, target_crs, method = "bilinear")
 zone_orig <- rasterize(adm0_vect, prec_orig, field = "COUNTRY")
 zone_proj <- rasterize(adm0_proj_vect, prec_reproj, field = "COUNTRY")
