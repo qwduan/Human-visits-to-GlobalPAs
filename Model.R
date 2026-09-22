@@ -29,7 +29,7 @@ fishnet_pa <- fishnet_pa %>% filter(overlap_area > 0) %>%
   filter(is.na(urban_area) | urban_area < 0.25)
 
 
-match <- read_csv('xxx/output/visit/covar_resample/match_var.csv')
+match <- read_csv('/output/visit/covar_resample/match_var.csv')
 pa_var <- fishnet_pa %>% left_join(match, by = 'fishnetid') %>%
   filter(!is.na(access))
 
@@ -105,14 +105,14 @@ pa_summary_f <- pa_summary_f %>%
   )
 
 
-visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
+visit_id <- read_csv("/output/visit/fishnet_humanvisit.csv") %>%
   mutate(fishnetid = fishernet_fishnetid) %>%
   dplyr::select(fishnetid, visit_latitude, visit_longitude)
 
 
 
 ######
-visit_space <- read_csv('xxx/output/visit/df_space.csv')
+visit_space <- read_csv('/output/visit/df_space.csv')
 visit_index_space <- visit_space %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
 for_space <- fishnet_pa %>%
@@ -328,7 +328,7 @@ ggplot(coef_all, aes(x = estimate, y = term, color = model)) +
 
 ############################intensity model
 
-visit_intensity <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
+visit_intensity <- read_csv('/output/visit/df_inten_per_adj.csv')
 visit_index_inten <- visit_intensity %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
 for_inten <- fishnet_pa %>%
