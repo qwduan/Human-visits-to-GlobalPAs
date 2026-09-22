@@ -3,7 +3,7 @@ library(tidyr); library(dplyr); library(readr); library(terra)
 library(sp); library(rgdal); library(sf); library(purrr)
 
 
-folder <- "xxx/output/visit/covar_resample"
+folder <- "/output/visit/covar_resample"
 
 #variables were processed in ArcGIS pro
 hf <- read_csv(file.path(folder, "hf.csv")) %>%
@@ -43,7 +43,7 @@ landuse <- read_csv(file.path(folder, "landuse.csv")) %>%
   mutate(landuse = as.factor(landuse))
 
 road_files <- paste0(
-  "xxx/output/visit/covar_resample/road",
+  "/output/visit/covar_resample/road",
   1:7,
   ".csv"
 )
@@ -86,7 +86,7 @@ match$road_length[is.na(match$road_length)] <- 0
 match$road_den <- match$road_length / match$fishnet_area
 match$intial_pop_density <- match$intialpop / match$fishnet_area
 match$build_den <- match$building / match$fishnet_area
-write.csv(match, 'xxx/output/visit/covar_resample/match_var.csv')
+write.csv(match, '/output/visit/covar_resample/match_var.csv')
 
 
 fishnet_pa <-  read_csv(file.path(folder, "fishnet_pa.csv"))
@@ -109,7 +109,7 @@ match_up <- match_up %>%
     iso3 = if_else(!is.na(FIRST_ISO3) & iso3 != FIRST_ISO3, FIRST_ISO3, iso3)
   )
 
-country_list <- read_csv('xxx/output/visit/matching/intial_pop.csv') %>%
+country_list <- read_csv('/output/visit/matching/intial_pop.csv') %>%
   dplyr::select(country)%>%
   distinct()
 country_list$iso3 <- countrycode(country_list$country, origin = "country.name", destination = "iso3c")
@@ -295,16 +295,16 @@ df_match_50$income <- factor(df_match_50$income, levels = c("High income", "Uppe
                                           "Lower middle income", "Low income"))
 
 
-visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
+visit_id <- read_csv("/output/visit/fishnet_humanvisit.csv") %>%
   mutate(fishnetid = fishernet_fishnetid) %>%
   dplyr::select(fishnetid, visit_latitude, visit_longitude)
 
 
 ####################################
 
-match_path <- "xxx/output/figures/3.matching_95"
+match_path <- "/output/figures/3.matching_95"
 
-visit_space <- read_csv('xxx/output/visit/df_space.csv')
+visit_space <- read_csv('/output/visit/df_space.csv')
 
 visit_index_space <- visit_space %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 
@@ -552,7 +552,7 @@ ggsave(
 
 ############################intensity
 
-visit_intensity <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
+visit_intensity <- read_csv('/output/visit/df_inten_per_adj.csv')
 visit_index_inten <- visit_intensity %>% left_join(visit_id, by = c('visit_latitude','visit_longitude')) %>% select(-...1)
 inten_match <- df_match_50 %>% left_join(visit_index_inten, by = c('fishnetid'))
 
