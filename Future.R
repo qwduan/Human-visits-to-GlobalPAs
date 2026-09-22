@@ -1,7 +1,7 @@
 library(terra); library(dplyr); library(readr); library(tidyr); library(stringr); library(countrycode); library(forcats)
 library(mgcv); library(progressr); library(future); library(future.apply); library(ggplot2); library(sf)
 
-ssp_base <- "xxx/origindata/SSP_pop/SSP"
+ssp_base <- "/origindata/SSP_pop/SSP"
 ssp_versions <- c("ssp1", "ssp2", "ssp3", "ssp4", "ssp5")
 ssp_paths <- lapply(ssp_versions, function(s) list(
   future = file.path(ssp_base, paste0(s, "_total_2100.tif")),
@@ -176,7 +176,7 @@ write.csv(visit_intensity_all, "xxx/output/visit/ssps_all.csv")
 
 
 
-scale_directory <- "xxx/output/visit/ssp_change_update"
+scale_directory <- "/output/visit/ssp_change_update"
 scale_files <- list.files(scale_directory, pattern = "\\.csv$", full.names = TRUE)
 
 scale_df <- scale_files %>%
@@ -343,13 +343,13 @@ income$income[income$iso3c == 'VNM'] <- 'Lower middle income'
 
 
 
-folder <- "xxx/output/visit/covar_resample"
+folder <- "/output/visit/covar_resample"
 
 process_ssp_visit_intensity <- function(combined_df) {
     
   pa <- read_csv(file.path(folder, "pa.csv"))
   
-  visit_id <- read_csv("xxx/output/visit/fishnet_humanvisit.csv") %>%
+  visit_id <- read_csv("/output/visit/fishnet_humanvisit.csv") %>%
     mutate(fishnetid = fishernet_fishnetid) %>%
     dplyr::select(fishnetid, visit_latitude, visit_longitude)
   
@@ -478,11 +478,11 @@ process_ssp_visit_intensity <- function(combined_df) {
   return(income_summary)
 }
 
-combined_df <- read_csv('xxx/output/visit/df_inten_per_adj.csv')
+combined_df <- read_csv('/output/visit/df_inten_per_adj.csv')
 base <- process_ssp_visit_intensity(combined_df)
 
 
-ssp <- read_csv( "xxx/output/visit/ssps_all.csv")
+ssp <- read_csv( "/output/visit/ssps_all.csv")
 ssp1 <- ssp %>% filter(scenario == 'ssp1')
 ssp2 <- ssp %>% filter(scenario == 'ssp2')
 ssp3 <- ssp %>% filter(scenario == 'ssp3')
@@ -554,7 +554,7 @@ final_table <- bind_rows(global_table, all_table)
 diff_table <- final_table %>%
   pivot_longer(cols = starts_with("ssp"), names_to = "ssp", values_to = "value") %>%
   mutate(diff = value - base)
-#write.csv(diff_table, "xxx/output/visit/ssps_income.csv")
+#write.csv(diff_table, "/output/visit/ssps_income.csv")
 ###same for size, region, IUCN category
 
 
@@ -566,7 +566,7 @@ ssp_colors <- c(
   "ssp5" = "#D62828"  
 )
 
-diff_income <- read_csv("xxx/output/visit/ssps_income.csv")
+diff_income <- read_csv("/output/visit/ssps_income.csv")
 diff_income$income <- factor(
   diff_income$income,
   levels = c("High income", "Upper middle income", "Lower middle income", "Low income")
@@ -578,7 +578,7 @@ ggplot(diff_income, aes(x = income, y = diff, fill = ssp)) +
   theme_bw()
 
 
-diff_size <- read_csv("xxx/output/visit/ssps_size.csv")
+diff_size <- read_csv("/output/visit/ssps_size.csv")
 diff_size$size <- factor(
   diff_size$size,
   levels = c(
@@ -594,7 +594,7 @@ ggplot(diff_size, aes(x = size, y = diff, fill = ssp)) +
   theme_bw()
 
 
-diff_rank <- read_csv("xxx/output/visit/ssps_rank.csv")
+diff_rank <- read_csv("/output/visit/ssps_rank.csv")
 
 ggplot(diff_rank, aes(x = as.factor(IUCN_rank), y = diff, fill = ssp)) +
   geom_bar(stat = "identity", position = position_dodge(), width = 0.6) +
@@ -602,7 +602,7 @@ ggplot(diff_rank, aes(x = as.factor(IUCN_rank), y = diff, fill = ssp)) +
   labs(x = "SSP", y = "Difference from base", fill = "IUCN_rank") +
   theme_bw()
 
-diff_region <- read_csv("xxx/output/visit/ssps_region.csv")
+diff_region <- read_csv("/output/visit/ssps_region.csv")
 diff_region$region <- factor(diff_region$region, levels = c("Global", setdiff(unique(diff_region$region), "Global")))
 
 ggplot(diff_region, aes(x = region, y = diff, fill = ssp)) +
